@@ -1,0 +1,26 @@
+app = "spotify-looper-web"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+  context = "."
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "8000"
+  JWT_EXPIRES_MIN = "43200"
+  LOOP_POLL_MS = "200"
+  USER_ACTION_GRACE_MS = "500"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

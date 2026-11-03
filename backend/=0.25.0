@@ -1,0 +1,13 @@
+Collecting httpx
+  Using cached httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+Requirement already satisfied: anyio in c:\users\rohit\omniroute_claude\.venv\lib\site-packages (from httpx) (4.15.1)
+Requirement already satisfied: certifi in c:\users\rohit\omniroute_claude\.venv\lib\site-packages (from httpx) (2026.10.23)
+Collecting httpcore==1.* (from httpx)
+  Using cached httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+Requirement already satisfied: idna in c:\users\rohit\omniroute_claude\.venv\lib\site-packages (from httpx) (3.20)
+Requirement already satisfied: h11>=0.16 in c:\users\rohit\omniroute_claude\.venv\lib\site-packages (from httpcore==1.*->httpx) (0.16.0)
+Requirement already satisfied: typing_extensions>=4.16.0 in c:\users\rohit\omniroute_claude\.venv\lib\site-packages (from anyio->httpx) (4.16.0)
+Using cached httpx-0.28.1-py3-none-any.whl (73 kB)
+Using cached httpcore-1.0.9-py3-none-any.whl (78 kB)
+Installing collected packages: httpcore, httpx
+Successfully installed httpcore-1.0.9 httpx-0.28.1
