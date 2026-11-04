@@ -102,6 +102,13 @@ const apiClient = {
     return res.json();
   },
   async exchangeCode(code, verifier, state) {
+    // Restore sessionToken from localStorage before the exchange — the OAuth
+    // callback navigates away from the SPA and back, so in-memory state alone
+    // loses the session. Without it, getHeaders() omits Authorization and the
+    // backend rejects the JWT.
+    const storedToken = localStorage.getItem('spotify_looper_session');
+    if (storedToken) sessionToken = storedToken;
+
     const res = await fetch(`${API_BASE}/api/auth/callback`, {
       method: 'POST',
       headers: getHeaders(),

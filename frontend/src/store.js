@@ -49,8 +49,10 @@ const useStore = create(devtools((set, get) => ({
   restorePendingVerifier: () => {
     const v = sessionStorage.getItem('spotify_looper_verifier');
     if (v) set({ pendingVerifier: v });
-    // Also immediately try to restore pendingVerifier from the exchange flow
-    // to avoid the "PKCE verifier lost" loop
+    // Restore sessionToken too — the OAuth callback reloads the SPA, so the
+    // in-memory session is gone. Without it, subsequent API calls are 401s.
+    const token = localStorage.getItem('spotify_looper_session');
+    if (token) set({ sessionToken: token, isAuthenticated: true });
   },
 
   setSession: (token, profile) => set({
