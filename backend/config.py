@@ -22,6 +22,15 @@ SPOTIFY_REDIRECT_URI = os.environ.get(
     "SPOTIFY_REDIRECT_URI",
     f"http://127.0.0.1:{int(os.environ.get('PORT', '8000'))}/auth/callback",
 )
+# Production deployments must set SPOTIFY_REDIRECT_URI explicitly — the
+# localhost fallback above is only valid for local dev. Raise loudly if it
+# is unset so a misconfigured deploy fails fast instead of breaking OAuth.
+if not os.environ.get("SPOTIFY_REDIRECT_URI"):
+    import warnings
+    warnings.warn(
+        "SPOTIFY_REDIRECT_URI not set; falling back to localhost. "
+        "Set it to the deployed URL in production."
+    )
 SCOPES = (
     "user-read-playback-state user-modify-playback-state "
     "user-read-currently-playing user-read-private"

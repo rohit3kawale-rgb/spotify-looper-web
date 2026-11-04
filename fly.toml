@@ -1,4 +1,4 @@
-app = "spotify-looper-web"
+app = "spotify-looper-web-2"
 primary_region = "iad"
 
 [build]
@@ -11,6 +11,7 @@ primary_region = "iad"
   JWT_EXPIRES_MIN = "43200"
   LOOP_POLL_MS = "200"
   USER_ACTION_GRACE_MS = "500"
+  SPOTIFY_REDIRECT_URI = "https://spotify-looper-web-2.fly.dev/auth/callback"
 
 [http_service]
   internal_port = 8000
