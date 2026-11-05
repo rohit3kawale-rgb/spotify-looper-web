@@ -4,12 +4,12 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Copy package files
-COPY package*.json ./
+# Copy frontend package files
+COPY frontend/package*.json ./
 RUN npm install --legacy-peer-deps
 
 # Copy frontend source and build (production config)
-COPY . .
+COPY frontend/ ./
 COPY frontend/.env.production .env
 RUN npm run build
 
@@ -32,7 +32,7 @@ RUN pip install --no-cache-dir gunicorn
 COPY backend/ ./backend/
 
 # Copy built frontend from builder stage
-COPY --from=frontend-builder /app/backend/static/ ./backend/static/
+COPY --from=frontend-builder /app/frontend/backend/static/ ./backend/static/
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
