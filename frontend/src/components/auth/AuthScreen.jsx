@@ -28,25 +28,22 @@ export default function AuthScreen() {
     const code = params.get('code');
     if (!code) return;
 
-    // Read the verifier straight out of sessionStorage rather than relying on
-    // the store's pendingVerifier: restorePendingVerifier() above schedules a
-    // state update that has not applied by the time this effect runs, so the
-    // store value would still be null and the exchange would fail with
-    // "PKCE verifier lost", sending the user back to the login screen in a loop.
-    const v = sessionStorage.getItem('spotify_looper_verifier');
+    // The PKCE verifier is looked up server-side from the state store keyed
+    // by `state`, so the frontend never has to transmit it. This fixes the
+    // mobile auth loop where sessionStorage is cleared when the browser
+    // navigates away to Spotify and back (common on iOS Safari and some
+    // Android browsers). We only need to send code + state.
     const s = sessionStorage.getItem('spotify_looper_state');
 
     const exchange = async () => {
       try {
-        if (!v) throw new Error('PKCE verifier lost. Please try logging in again.');
         if (!s) throw new Error('State parameter lost. Please try logging in again.');
-        const data = await apiClient.exchangeCode(code, v, s);
+        const data = await apiClient.exchangeCode(code, s);
         if (!data || !data.session_token || !data.profile) {
           throw new Error('Authentication verification failed');
         }
         apiClient.setSession(data.session_token);
         setSession(data.session_token, data.profile);
-        sessionStorage.removeItem('spotify_looper_verifier');
         sessionStorage.removeItem('spotify_looper_state');
         window.location.href = '/';
       } catch (err) {

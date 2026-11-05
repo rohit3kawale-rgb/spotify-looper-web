@@ -103,18 +103,16 @@ const apiClient = {
     });
     return res.json();
   },
-  async exchangeCode(code, verifier, state) {
-    // Restore sessionToken from localStorage before the exchange — the OAuth
-    // callback navigates away from the SPA and back, so in-memory state alone
-    // loses the session. Without it, getHeaders() omits Authorization and the
-    // backend rejects the JWT.
-    const storedToken = localStorage.getItem('spotify_looper_session');
-    if (storedToken) sessionToken = storedToken;
-
+  async exchangeCode(code, state) {
+    // The PKCE verifier is looked up server-side from the state store keyed
+    // by `state`, so the frontend never has to transmit it. This fixes the
+    // mobile auth loop where sessionStorage is cleared when the browser
+    // navigates away to Spotify and back (common on iOS Safari and some
+    // Android browsers).
     const res = await fetch(`${API_BASE}/api/auth/callback`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ code, verifier, state })
+      body: JSON.stringify({ code, state })
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();

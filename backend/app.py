@@ -258,17 +258,17 @@ async def auth_callback_get(code: str, state: str = None):
 @app.post("/api/auth/callback")
 async def auth_callback(body: dict):
     code = body.get("code")
-    verifier = body.get("verifier")
     state = body.get("state")
-    # The frontend validates state against sessionStorage before sending.
-    # Here we ensure a state was provided as defense in depth, and pass it
-    # to exchange_code for CSRF protection.
-    if not code or not verifier:
-        raise HTTPException(status_code=400, detail="Missing code or verifier")
+    # The PKCE verifier is looked up server-side from the state store, so the
+    # frontend never has to transmit it. This fixes the mobile auth loop where
+    # sessionStorage is cleared when the browser navigates away to Spotify and
+    # back (common on iOS Safari and some Android browsers).
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing code")
     if not state:
         raise HTTPException(status_code=400, detail="Missing state parameter")
     try:
-        token = exchange_code(code, verifier, state=state)
+        token = exchange_code(code, state=state)
     except ValueError as e:
         # Spotify rejected the code (expired/revoked/invalid) — surface it
         # as a clean 400 instead of letting it become a 500.

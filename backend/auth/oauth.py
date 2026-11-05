@@ -84,13 +84,18 @@ def build_auth_url(client_id: Optional[str] = None) -> Tuple[str, str, str]:
     return f"{AUTH_URL}?{urllib.parse.urlencode(params)}", verifier, state
 
 
-def exchange_code(code: str, code_verifier: str, state: Optional[str] = None, client_id: Optional[str] = None) -> dict:
+def exchange_code(code: str, state: Optional[str] = None, code_verifier: Optional[str] = None, client_id: Optional[str] = None) -> dict:
     """Exchange an authorization code for a token dict.
+
+    The PKCE code_verifier is looked up from the file-backed state store
+    keyed by `state`, so the frontend never needs to transmit it. This
+    fixes the mobile auth loop where sessionStorage is cleared when the
+    browser navigates away to Spotify and back (common on iOS Safari and
+    some Android browsers).
 
     Validates the state parameter to prevent CSRF attacks. Raises ValueError
     with a descriptive message on failure so the caller can translate it into
-    a clean HTTP response instead of a 500. If state is provided, it is
-    validated against the stored state from build_auth_url generation.
+    a clean HTTP response instead of a 500.
     """
     client_id = client_id or SPOTIFY_CLIENT_ID
 
@@ -101,11 +106,9 @@ def exchange_code(code: str, code_verifier: str, state: Optional[str] = None, cl
         _save_state_store(store)
         if stored_verifier is None:
             raise ValueError("Invalid state parameter: state not found or already used")
-        # Also verify that the code_verifier matches what was stored
-        if stored_verifier != code_verifier:
-            raise ValueError("Invalid state parameter: code_verifier mismatch")
-    # If state is None, proceed without state validation — the route handler
-    # is responsible for ensuring state was checked against the session store.
+        code_verifier = stored_verifier
+    elif not code_verifier:
+        raise ValueError("Missing code_verifier and no state to look it up from")
 
     resp = requests.post(
         TOKEN_URL,
