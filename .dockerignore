@@ -30,4 +30,5 @@ node-v24.13.1-x64.msi
 "Adobe Premiere Pro 2025.zip"
 "Adobe Premiere Pro 2025/"
 # Exclude stale root-level src/ (old backup) — the real source lives in frontend/
-src/
+# Match src/ at the project root only, not frontend/src/
+/src/
