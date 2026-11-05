@@ -505,17 +505,19 @@ async def websocket_endpoint(websocket: WebSocket):
     await handle_connect(websocket, token, room_id)
 
 # ── Static frontend serving (if built) ───────────────────────────────────────────────
+# Mount static assets first — highest priority
 if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
 
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        if full_path.startswith("api/") or full_path == "ws":
-            raise HTTPException(status_code=404)
-        target = FRONTEND_DIR / full_path
-        if target.is_file():
-            return FileResponse(target)
-        return FileResponse(FRONTEND_DIR / "index.html")
+# SPA fallback for any other path (excluding API/WebSocket)
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    if full_path.startswith("api/") or full_path == "ws":
+        raise HTTPException(status_code=404)
+    target = FRONTEND_DIR / full_path
+    if target.is_file():
+        return FileResponse(target)
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 if __name__ == "__main__":
     import uvicorn

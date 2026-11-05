@@ -22,7 +22,8 @@
     "framer-motion": "^11.11.0",
     "react-spinners": "^0.14.1",
     "react-slider": "^2.0.4",
-    "lodash": "^4.17.21"
+    "lodash": "^4.17.21",
+    "@babel/runtime": "^7.25.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.1",
