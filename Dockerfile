@@ -32,7 +32,8 @@ RUN pip install --no-cache-dir gunicorn
 COPY backend/ ./backend/
 
 # Copy built frontend from builder stage
-COPY --from=frontend-builder /app/frontend/backend/static/ ./backend/static/
+# Vite outDir '../backend/static' from WORKDIR /app/frontend resolves to /app/backend/static/
+COPY --from=frontend-builder /app/backend/static/ ./backend/static/
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
