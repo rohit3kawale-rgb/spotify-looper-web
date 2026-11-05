@@ -33,7 +33,9 @@ export default function AuthScreen() {
     // mobile auth loop where sessionStorage is cleared when the browser
     // navigates away to Spotify and back (common on iOS Safari and some
     // Android browsers). We only need to send code + state.
-    const s = sessionStorage.getItem('spotify_looper_state');
+    // Read state from the URL query string — it survives the full-page
+    // redirect back from Spotify, unlike sessionStorage on mobile browsers.
+    const s = params.get('state');
 
     const exchange = async () => {
       try {
@@ -44,7 +46,6 @@ export default function AuthScreen() {
         }
         apiClient.setSession(data.session_token);
         setSession(data.session_token, data.profile);
-        sessionStorage.removeItem('spotify_looper_state');
         window.location.href = '/';
       } catch (err) {
         setError(err.message || 'Authentication failed. Please try again.');
