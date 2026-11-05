@@ -1,0 +1,33 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+node_modules/
+.git/
+.github/
+.env
+.env.local
+.env.development
+*.log
+*.md
+Dockerfile
+docker-compose.yml
+fly.toml
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+*.zip
+*.7z
+*.rar
+crack/
+Downloads/
+node-v24.13.1-x64.msi
+"Adobe Premiere Pro 2025.zip"
+"Adobe Premiere Pro 2025/"
+# Exclude stale root-level src/ (old backup) — the real source lives in frontend/
+src/
