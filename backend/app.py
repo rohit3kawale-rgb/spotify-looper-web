@@ -242,8 +242,10 @@ async def remove_preset(index: int, account_id: str = Depends(get_account_id)):
 @app.get("/api/auth/url")
 def auth_url(client_id: str = SPOTIFY_CLIENT_ID):
     """Build the Spotify authorize URL plus PKCE verifier for the frontend."""
-    url, verifier, state = build_auth_url(client_id)
-    return {"auth_url": url, "verifier": verifier, "state": state}
+    url, verifier, state_token = build_auth_url(client_id)
+    # state_token is the JWT containing {verifier, state}. The frontend
+    # passes it back in the callback to avoid any shared server state.
+    return {"auth_url": url, "verifier": verifier, "state": state_token}
 
 @app.get("/api/auth/callback")
 async def auth_callback_get(code: str, state: str = None):
@@ -293,7 +295,11 @@ def _loop_state_for(account_id: str) -> dict:
 
 @app.get("/api/loop/state")
 async def loop_state(account_id: str = Depends(get_account_id)):
-    """Return current loop state + active track for this account."""
+    """Return current loop state + active track for this account.
+
+    Restores persisted loop state from disk first so the segment / mode /
+    direction survive process restarts and page refreshes.
+    """
     lstate = _loop_state_for(account_id)
     async def _do(api):
         playback = await api.get_playback()
@@ -327,13 +333,18 @@ async def loop_control(body: dict, account_id: str = Depends(get_account_id)):
     action = body.get("action")
     device_id = body.get("device_id")
 
-    valid_actions = {"play", "pause", "seek", "volume", "next", "previous", "set_mode", "clear_loop"}
+    valid_actions = {"play", "pause", "seek", "volume", "next", "previous", "transfer", "set_mode", "clear_loop"}
     if action not in valid_actions:
         raise HTTPException(status_code=400, detail=f"Invalid action: {action}. Valid actions: {', '.join(sorted(valid_actions))}")
 
     try:
         if action == "play":
-            await api.start_playback(device_id=device_id, position_ms=body.get("position_ms", 0))
+            await api.start_playback(
+                device_id=device_id,
+                uris=body.get("uris"),
+                context_uri=body.get("context_uri"),
+                position_ms=body.get("position_ms", 0),
+            )
         elif action == "pause":
             await api.pause_playback(device_id=device_id)
         elif action == "seek":
@@ -350,16 +361,24 @@ async def loop_control(body: dict, account_id: str = Depends(get_account_id)):
             await api.skip_next(device_id=device_id)
         elif action == "previous":
             await api.skip_previous(device_id=device_id)
+        elif action == "transfer":
+            target = device_id or body.get("target_device_id")
+            if not target:
+                raise HTTPException(status_code=400, detail="device_id required for transfer")
+            await api.transfer_playback(target, force_play=body.get("force_play", False))
         elif action == "set_mode":
-            from ws.handlers import get_user_loop_state
-            get_user_loop_state(account_id)["mode"] = body.get("mode", "Forward")
+            from ws.handlers import get_user_loop_state, _save_loop_state
+            lstate = get_user_loop_state(account_id)
+            lstate["mode"] = body.get("mode", "Forward")
+            _save_loop_state(account_id, lstate)
         elif action == "clear_loop":
-            from ws.handlers import get_user_loop_state
+            from ws.handlers import get_user_loop_state, _save_loop_state
             lstate = get_user_loop_state(account_id)
             lstate["loop_start_ms"] = None
             lstate["loop_end_ms"] = None
             lstate["direction"] = 1
             lstate["is_enabled"] = False
+            _save_loop_state(account_id, lstate)
     except RuntimeError as e:
         # Token issues
         if "No valid Spotify token" in str(e) or "expired" in str(e).lower():
@@ -375,11 +394,31 @@ async def loop_control(body: dict, account_id: str = Depends(get_account_id)):
 @app.post("/api/loop/segment")
 async def loop_segment(body: dict, account_id: str = Depends(get_account_id)):
     """Set loop segment boundaries."""
-    from ws.handlers import get_user_loop_state
+    from ws.handlers import get_user_loop_state, _save_loop_state
     lstate = get_user_loop_state(account_id)
     lstate["loop_start_ms"] = body.get("start_ms")
     lstate["loop_end_ms"] = body.get("end_ms")
     lstate["is_enabled"] = True
+    _save_loop_state(account_id, lstate)
+    return {"ok": True}
+
+
+@app.post("/api/loop/state")
+async def save_loop_state(body: dict, account_id: str = Depends(get_account_id)):
+    """Persist loop state (segment + mode + direction) to disk."""
+    from ws.handlers import get_user_loop_state, _save_loop_state
+    lstate = get_user_loop_state(account_id)
+    if "loop_start_ms" in body:
+        lstate["loop_start_ms"] = body["loop_start_ms"]
+    if "loop_end_ms" in body:
+        lstate["loop_end_ms"] = body["loop_end_ms"]
+    if "mode" in body:
+        lstate["mode"] = body["mode"]
+    if "direction" in body:
+        lstate["direction"] = body["direction"]
+    if "is_enabled" in body:
+        lstate["is_enabled"] = bool(body["is_enabled"])
+    _save_loop_state(account_id, lstate)
     return {"ok": True}
 
 
@@ -395,7 +434,7 @@ async def loop_iteration(account_id: str = Depends(get_account_id)):
 @app.post("/api/preset/load")
 async def preset_load(body: dict, account_id: str = Depends(get_account_id)):
     """Load a saved preset by index — sets segment + mode + starts playback."""
-    preset_id = body.get("preset_id")
+    preset_id = body.get("preset_id", body.get("presetId"))
     try:
         idx = int(preset_id)
     except (TypeError, ValueError):

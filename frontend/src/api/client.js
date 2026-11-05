@@ -44,6 +44,14 @@ const apiClient = {
     const res = await fetch(`${API_BASE}/api/loop/state`, { headers: getHeaders() });
     return res.json();
   },
+  async saveLoopState(data) {
+    const res = await fetch(`${API_BASE}/api/loop/state`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
   async control(action, data = {}) {
     const res = await fetch(`${API_BASE}/api/loop/control`, {
       method: 'POST',
@@ -117,7 +125,9 @@ const apiClient = {
   },
   async listRooms() {
     const res = await fetch(`${API_BASE}/api/rooms`, { headers: getHeaders() });
-    return res.json();
+    const data = await res.json();
+    // Backend wraps the list in { rooms: [...] }.
+    return Array.isArray(data) ? data : (data.rooms || []);
   },
   async createRoom(name) {
     const res = await fetch(`${API_BASE}/api/rooms`, {

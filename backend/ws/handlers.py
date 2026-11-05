@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from auth.sessions import verify_session
 from auth.token_store import get_token
 from auth.oauth import refresh_token
-from config import LOOP_POLL_MS
+from config import LOOP_POLL_MS, LOOP_STATE_FILE
 from spotify.client import SpotifyAPI
 from spotify.loop_modes import BUILTIN_MODES, LoopState, LoopAction
 
@@ -15,9 +15,50 @@ from spotify.loop_modes import BUILTIN_MODES, LoopState, LoopAction
 USER_LOOP_STATES: Dict[str, dict] = {}
 
 
+def _load_loop_state(account_id: str) -> dict:
+    """Restore persisted loop state from disk (survives process restarts)."""
+    try:
+        if LOOP_STATE_FILE.exists():
+            data = json.loads(LOOP_STATE_FILE.read_text())
+            state = data.get(account_id)
+            if state:
+                return {
+                    "loop_start_ms": state.get("loop_start_ms"),
+                    "loop_end_ms": state.get("loop_end_ms"),
+                    "mode": state.get("mode", "Forward"),
+                    "direction": state.get("direction", 1),
+                    "is_enabled": bool(state.get("is_enabled")),
+                }
+    except Exception as e:
+        logging.getLogger(__name__).debug(f"Loop state load error: {e}")
+    return None
+
+
+def _save_loop_state(account_id: str, state: dict) -> None:
+    """Persist loop state to disk so it survives process restarts."""
+    try:
+        data = {}
+        if LOOP_STATE_FILE.exists():
+            try:
+                data = json.loads(LOOP_STATE_FILE.read_text())
+            except Exception:
+                data = {}
+        data[account_id] = {
+            "loop_start_ms": state.get("loop_start_ms"),
+            "loop_end_ms": state.get("loop_end_ms"),
+            "mode": state.get("mode", "Forward"),
+            "direction": state.get("direction", 1),
+            "is_enabled": bool(state.get("is_enabled")),
+        }
+        LOOP_STATE_FILE.write_text(json.dumps(data, indent=2))
+    except Exception as e:
+        logging.getLogger(__name__).debug(f"Loop state save error: {e}")
+
+
 def get_user_loop_state(account_id: str) -> dict:
     if account_id not in USER_LOOP_STATES:
-        USER_LOOP_STATES[account_id] = {
+        persisted = _load_loop_state(account_id)
+        USER_LOOP_STATES[account_id] = persisted or {
             "loop_start_ms": None,
             "loop_end_ms": None,
             "mode": "Forward",
@@ -157,6 +198,18 @@ async def handle_connect(ws, token: str, room_id: Optional[str] = None):
                             "account_id": account_id,
                         })
 
+                    # Push the device list so the frontend's DevicesPanel stays populated.
+                    # Without this the panel is empty even though /api/devices works.
+                    try:
+                        devices = await api.get_devices()
+                        await manager.broadcast_room(room_id, {
+                            "type": "devices",
+                            "data": devices,
+                            "account_id": account_id,
+                        })
+                    except Exception:
+                        pass
+
                     # Check loop mode logic if active
                     if lstate["is_enabled"] and lstate["loop_start_ms"] is not None and lstate["loop_end_ms"] is not None:
                         mode_obj = BUILTIN_MODES.get(lstate["mode"], BUILTIN_MODES["Forward"])
@@ -200,6 +253,7 @@ async def handle_connect(ws, token: str, room_id: Optional[str] = None):
                 lstate["loop_start_ms"] = data.get("start_ms")
                 lstate["loop_end_ms"] = data.get("end_ms")
                 lstate["is_enabled"] = True
+                _save_loop_state(account_id, lstate)
 
                 # Update room loop state
                 manager.update_room_loop_state(room_id, lstate)
@@ -211,6 +265,7 @@ async def handle_connect(ws, token: str, room_id: Optional[str] = None):
 
             elif msg_type == "set_mode":
                 lstate["mode"] = data.get("mode", "Forward")
+                _save_loop_state(account_id, lstate)
                 manager.update_room_loop_state(room_id, lstate)
                 await manager.broadcast_room(room_id, {
                     "type": "loop_state",
@@ -223,6 +278,7 @@ async def handle_connect(ws, token: str, room_id: Optional[str] = None):
                 lstate["loop_end_ms"] = None
                 lstate["is_enabled"] = False
                 lstate["direction"] = 1
+                _save_loop_state(account_id, lstate)
                 manager.update_room_loop_state(room_id, lstate)
                 await manager.broadcast_room(room_id, {
                     "type": "loop_state",
@@ -242,7 +298,12 @@ async def handle_connect(ws, token: str, room_id: Optional[str] = None):
                 api = SpotifyAPI(_make_token_getter(account_id))
                 action = data.get("action")
                 if action == "play":
-                    await api.start_playback(device_id=data.get("device_id"))
+                    await api.start_playback(
+                        device_id=data.get("device_id"),
+                        uris=data.get("uris"),
+                        context_uri=data.get("context_uri"),
+                        position_ms=data.get("position_ms", 0),
+                    )
                 elif action == "pause":
                     await api.pause_playback(device_id=data.get("device_id"))
                 elif action == "seek":

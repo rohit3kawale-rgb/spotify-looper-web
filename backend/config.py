@@ -4,16 +4,21 @@ import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+
+# ── Persistent data directory ─────────────────────────────────────────────
+# Fly.io mounts a persistent volume at /data; fall back to a local dir.
+DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
+try:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    DATA_DIR = BASE_DIR / "data"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Spotify OAuth (PKCE) ────────────────────────────────────────────────
-# Reuses the existing PKCE client id from the desktop app; override with env.
 SPOTIFY_CLIENT_ID = os.environ.get(
     "SPOTIFY_CLIENT_ID"
 )  # No default — must be set via env var for security
 if not SPOTIFY_CLIENT_ID:
-    # Fallback for local dev only
     import warnings
     warnings.warn("SPOTIFY_CLIENT_ID not set, using hardcoded dev value")
     SPOTIFY_CLIENT_ID = "9a6f10a547204621b452aa9d90c23efe"
@@ -22,15 +27,13 @@ SPOTIFY_REDIRECT_URI = os.environ.get(
     "SPOTIFY_REDIRECT_URI",
     f"http://127.0.0.1:{int(os.environ.get('PORT', '8000'))}/auth/callback",
 )
-# Production deployments must set SPOTIFY_REDIRECT_URI explicitly — the
-# localhost fallback above is only valid for local dev. Raise loudly if it
-# is unset so a misconfigured deploy fails fast instead of breaking OAuth.
 if not os.environ.get("SPOTIFY_REDIRECT_URI"):
     import warnings
     warnings.warn(
         "SPOTIFY_REDIRECT_URI not set; falling back to localhost. "
         "Set it to the deployed URL in production."
     )
+
 SCOPES = (
     "user-read-playback-state user-modify-playback-state "
     "user-read-currently-playing user-read-private"
@@ -44,20 +47,22 @@ TOKEN_FILE = Path(os.environ.get("TOKEN_FILE", str(Path.home() / ".spotify_loope
 # ── Persistence ─────────────────────────────────────────────────────────
 TOKENS_FILE = DATA_DIR / "tokens.json"      # account_id -> token dict
 PRESETS_FILE = DATA_DIR / "presets.json"    # account_id -> [preset, ...]
+LOOP_STATE_FILE = DATA_DIR / "loop_state.json"  # account_id -> loop state
 
 # ── Session JWT ─────────────────────────────────────────────────────────
-_SECRET_FILE = DATA_DIR / "jwt_secret"
-if _SECRET_FILE.exists():
-    JWT_SECRET = _SECRET_FILE.read_text().strip()
-else:
-    JWT_SECRET = secrets.token_urlsafe(48)
-    _SECRET_FILE.write_text(JWT_SECRET)
-    # Restrict permissions to owner-only (0o600). Best-effort on Windows.
-    try:
-        import stat
-        os.chmod(_SECRET_FILE, stat.S_IRUSR | stat.S_IWUSR)
-    except Exception:
-        pass
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    _SECRET_FILE = DATA_DIR / "jwt_secret"
+    if _SECRET_FILE.exists():
+        JWT_SECRET = _SECRET_FILE.read_text().strip()
+    else:
+        JWT_SECRET = secrets.token_urlsafe(48)
+        _SECRET_FILE.write_text(JWT_SECRET)
+        try:
+            import stat
+            os.chmod(_SECRET_FILE, stat.S_IRUSR | stat.S_IWUSR)
+        except Exception:
+            pass
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRES_MIN = int(os.environ.get("JWT_EXPIRES_MIN", "43200"))  # 30 days
@@ -65,8 +70,8 @@ JWT_EXPIRES_MIN = int(os.environ.get("JWT_EXPIRES_MIN", "43200"))  # 30 days
 # ── Server / runtime ────────────────────────────────────────────────────
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
-FRONTEND_DIR = BASE_DIR / "backend" / "static"  # Correct path for built frontend
-LOOP_POLL_MS = int(os.environ.get("LOOP_POLL_MS", "200"))      # engine tick
+FRONTEND_DIR = BASE_DIR / "backend" / "static"
+LOOP_POLL_MS = int(os.environ.get("LOOP_POLL_MS", "200"))
 USER_ACTION_GRACE_MS = int(os.environ.get("USER_ACTION_GRACE_MS", "500"))
 
 # ── CORS ──────────────────────────────────────────────────────────────────

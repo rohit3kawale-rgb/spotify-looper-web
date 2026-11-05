@@ -1,55 +1,53 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+
+const deviceIcon = (type) => {
+  if (type?.includes('phone') || type?.includes('mobile')) return '📱';
+  if (type?.includes('computer')) return '💻';
+  if (type?.includes('tv')) return '📺';
+  if (type?.includes('speaker')) return '🔊';
+  if (type?.includes('game')) return '🎮';
+  if (type?.includes('cast')) return '📡';
+  return '🖥️';
+};
 
 export default function DevicesPanel({ devices, currentDeviceId, onDeviceChange }) {
   return (
-    <div className="card space-y-3">
-      <div className="section-header">
-        <span>Playback Devices</span>
-      </div>
-      
-      <div className="space-y-2">
-        {(devices?.length ?? 0) === 0 ? (
-          <p className="text-sm text-spotify-gray text-center py-4">
-            No devices available
-          </p>
-        ) : (
-          devices.map(device => (
-            <motion.button
-              key={device.id}
-              onClick={() => onDeviceChange(device.id)}
-              className={`w-full text-left p-4 rounded-xl transition-all ${
-                device.id === currentDeviceId
-                  ? 'bg-spotify-green/20 border-2 border-spotify-green'
-                  : 'bg-spotify-dark-gray/50 hover:bg-spotify-light-gray/30'
+    <div className="bg-[#181818] rounded-lg p-5 space-y-4">
+      <h2 className="text-white font-bold text-xl">Devices</h2>
+
+      {(!devices || devices.length === 0) ? (
+        <p className="text-spotify-gray text-sm text-center py-8">No devices found.</p>
+      ) : (
+        <div className="space-y-1">
+          {devices.map(d => (
+            <button
+              key={d.id}
+              onClick={() => onDeviceChange(d.id)}
+              className={`w-full flex items-center gap-3 p-3 rounded-md transition-all text-left ${
+                d.id === currentDeviceId
+                  ? 'bg-spotify-green/20 border border-spotify-green/40'
+                  : 'hover:bg-white/5 border border-transparent'
               }`}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
             >
-              <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                  device.is_active ? 'bg-spotify-green' : 'bg-spotify-light-gray/50'
-                }`}>
-                  <span className="text-xs">🔊</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`font-medium truncate ${device.id === currentDeviceId ? 'text-spotify-green' : 'text-spotify-white'}`}>
-                    {device.name}
-                  </p>
-                  <div className="flex gap-2 mt-1">
-                    <span className="text-xs text-spotify-gray">
-                      {device.type}
-                    </span>
-                    {device.is_active && (
-                      <span className="text-xs text-spotify-green">● Active</span>
-                    )}
-                  </div>
-                </div>
+              <span className="text-xl">{deviceIcon(d.type)}</span>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-medium truncate ${d.id === currentDeviceId ? 'text-spotify-green' : 'text-white'}`}>
+                  {d.name}
+                </p>
+                <p className="text-[11px] text-spotify-gray">{d.type || 'Device'}</p>
               </div>
-            </motion.button>
-          ))
-        )}
-      </div>
+              {d.is_active && (
+                <span className="w-2 h-2 rounded-full bg-spotify-green flex-shrink-0" />
+              )}
+              {d.id === currentDeviceId && (
+                <svg className="w-5 h-5 text-spotify-green flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
