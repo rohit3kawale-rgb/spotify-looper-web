@@ -293,6 +293,16 @@ async def handle_connect(ws, token: str, room_id: Optional[str] = None):
                     "account_id": account_id,
                 }))
 
+            elif msg_type == "toggle_loop":
+                lstate["is_enabled"] = not lstate.get("is_enabled", False)
+                _save_loop_state(account_id, lstate)
+                manager.update_room_loop_state(room_id, lstate)
+                await manager.broadcast_room(room_id, {
+                    "type": "loop_state",
+                    "data": lstate,
+                    "account_id": account_id,
+                })
+
             elif msg_type == "control":
                 # Playback control: play, pause, seek, volume, next, previous
                 api = SpotifyAPI(_make_token_getter(account_id))

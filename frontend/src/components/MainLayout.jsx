@@ -164,6 +164,10 @@ export default function MainLayout() {
                     loopDuration={loopDuration}
                     formatTime={formatTime}
                     modes={['Forward', 'Ping-Pong', 'Crossfade']}
+                    onToggleLoop={async () => {
+                      setLoopEnabled(!loopEnabled);
+                      try { await apiClient.controlLoop('toggle_loop'); } catch {}
+                    }}
                     onSetLoopStart={async (ms) => {
                       setLoopStart(ms);
                       if (loopEndMs != null && ms < loopEndMs) {

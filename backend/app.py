@@ -333,7 +333,7 @@ async def loop_control(body: dict, account_id: str = Depends(get_account_id)):
     action = body.get("action")
     device_id = body.get("device_id")
 
-    valid_actions = {"play", "pause", "seek", "volume", "next", "previous", "transfer", "set_mode", "clear_loop"}
+    valid_actions = {"play", "pause", "seek", "volume", "next", "previous", "transfer", "set_mode", "clear_loop", "toggle_loop"}
     if action not in valid_actions:
         raise HTTPException(status_code=400, detail=f"Invalid action: {action}. Valid actions: {', '.join(sorted(valid_actions))}")
 
@@ -378,6 +378,11 @@ async def loop_control(body: dict, account_id: str = Depends(get_account_id)):
             lstate["loop_end_ms"] = None
             lstate["direction"] = 1
             lstate["is_enabled"] = False
+            _save_loop_state(account_id, lstate)
+        elif action == "toggle_loop":
+            from ws.handlers import get_user_loop_state, _save_loop_state
+            lstate = get_user_loop_state(account_id)
+            lstate["is_enabled"] = not lstate.get("is_enabled", False)
             _save_loop_state(account_id, lstate)
     except RuntimeError as e:
         # Token issues

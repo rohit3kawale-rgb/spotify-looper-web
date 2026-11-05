@@ -145,6 +145,14 @@ const apiClient = {
     });
     return res.json();
   },
+  async toggleLoop() {
+    const res = await fetch(`${API_BASE}/api/loop/control`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ action: 'toggle_loop' })
+    });
+    return res.json();
+  },
   async setLoopSegment(start_ms, end_ms) {
     const res = await fetch(`${API_BASE}/api/loop/segment`, {
       method: 'POST',
