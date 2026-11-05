@@ -6,11 +6,11 @@ WORKDIR /app/frontend
 
 # Copy package files
 COPY package*.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 # Copy frontend source and build (production config)
 COPY . .
-COPY .env.production .env
+COPY frontend/.env.production .env
 RUN npm run build
 
 # Stage 2: Build backend and combine
@@ -29,10 +29,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir gunicorn
 
 # Copy backend source
-COPY . ./backend/
+COPY backend/ ./backend/
 
 # Copy built frontend from builder stage
-COPY --from=frontend-builder /app/frontend/dist/ ./backend/static/
+COPY --from=frontend-builder /app/backend/static/ ./backend/static/
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
@@ -43,4 +43,5 @@ WORKDIR /app/backend
 EXPOSE 8000
 
 # Use gunicorn with uvicorn workers for production
-CMD ["gunicorn", "app:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+# Reduced to 2 workers to stay within 256MB RAM limit and prevent OOM kills (SIGKILL)
+CMD ["gunicorn", "app:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
