@@ -13,17 +13,35 @@ import requests
 
 from config import (
     AUTH_URL,
+    DATA_DIR,
     SCOPES,
     SPOTIFY_CLIENT_ID,
     SPOTIFY_REDIRECT_URI,
     TOKEN_URL,
 )
 
-# Module-level store for generated OAuth states, mapping state -> code_verifier.
-# This allows the exchange_code function to validate that the state callback
-# matches the state that was generated when building the auth URL, preventing
-# CSRF attacks.
-_OAUTH_STATE_STORE: Dict[str, str] = {}
+# Persist OAuth state to a file rather than in-memory so that Gunicorn workers
+# (which each have their own module-level state) share the same store. Without
+# this, build_auth_url on worker A stores the verifier but exchange_code on
+# worker B sees an empty store and rejects the callback with 400.
+_OAUTH_STATE_FILE = DATA_DIR / "oauth_states.json"
+
+
+def _load_state_store() -> Dict[str, str]:
+    if not _OAUTH_STATE_FILE.exists():
+        return {}
+    try:
+        import json
+        return json.loads(_OAUTH_STATE_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _save_state_store(data: Dict[str, str]) -> None:
+    import json
+    temp = _OAUTH_STATE_FILE.with_suffix(".tmp")
+    temp.write_text(json.dumps(data))
+    temp.replace(_OAUTH_STATE_FILE)
 
 
 def generate_pkce_pair() -> Tuple[str, str]:
@@ -43,13 +61,16 @@ def build_auth_url(client_id: Optional[str] = None) -> Tuple[str, str, str]:
     """Build the Spotify authorize URL plus the PKCE verifier.
 
     Returns (url, code_verifier, state).
-    The generated state is stored in the module-level OAuth state store
-    so it can be validated during the token exchange callback.
+    The generated state is stored in the file-backed OAuth state store
+    so it can be validated during the token exchange callback, even when
+    the callback hits a different Gunicorn worker.
     """
     client_id = client_id or SPOTIFY_CLIENT_ID
     verifier, challenge = generate_pkce_pair()
     state = secrets.token_urlsafe(16)
-    _OAUTH_STATE_STORE[state] = verifier
+    store = _load_state_store()
+    store[state] = verifier
+    _save_state_store(store)
     params = {
         "client_id": client_id,
         "response_type": "code",
@@ -75,7 +96,9 @@ def exchange_code(code: str, code_verifier: str, state: Optional[str] = None, cl
 
     # Validate state parameter against stored state from build_auth_url
     if state is not None:
-        stored_verifier = _OAUTH_STATE_STORE.pop(state, None)
+        store = _load_state_store()
+        stored_verifier = store.pop(state, None)
+        _save_state_store(store)
         if stored_verifier is None:
             raise ValueError("Invalid state parameter: state not found or already used")
         # Also verify that the code_verifier matches what was stored
