@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:9000';
+// Use nullish coalescing (??) so an empty string for VITE_API_URL
+// is treated as valid (same-origin), not falsy (falling back to localhost).
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
 let sessionToken = null;
 
