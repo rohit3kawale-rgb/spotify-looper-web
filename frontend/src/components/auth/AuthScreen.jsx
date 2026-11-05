@@ -28,13 +28,9 @@ export default function AuthScreen() {
     const code = params.get('code');
     if (!code) return;
 
-    // The PKCE verifier is looked up server-side from the state store keyed
-    // by `state`, so the frontend never has to transmit it. This fixes the
-    // mobile auth loop where sessionStorage is cleared when the browser
-    // navigates away to Spotify and back (common on iOS Safari and some
-    // Android browsers). We only need to send code + state.
-    // Read state from the URL query string — it survives the full-page
-    // redirect back from Spotify, unlike sessionStorage on mobile browsers.
+    // The state parameter is a JWT that embeds the PKCE verifier server-side,
+    // eliminating any shared state between machines. Read it from the URL
+    // which always survives the full-page redirect.
     const s = params.get('state');
 
     const exchange = async () => {

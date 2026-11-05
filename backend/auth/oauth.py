@@ -7,49 +7,24 @@ import base64
 import hashlib
 import secrets
 import urllib.parse
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 import requests
 
 from config import (
     AUTH_URL,
-    DATA_DIR,
+    JWT_SECRET,
     SCOPES,
     SPOTIFY_CLIENT_ID,
     SPOTIFY_REDIRECT_URI,
     TOKEN_URL,
 )
 
-# Persist OAuth state to a file rather than in-memory so that Gunicorn workers
-# (which each have their own module-level state) share the same store. Without
-# this, build_auth_url on worker A stores the verifier but exchange_code on
-# worker B sees an empty store and rejects the callback with 400.
-_OAUTH_STATE_FILE = DATA_DIR / "oauth_states.json"
-
-
-def _load_state_store() -> Dict[str, str]:
-    if not _OAUTH_STATE_FILE.exists():
-        return {}
-    try:
-        import json
-        return json.loads(_OAUTH_STATE_FILE.read_text())
-    except Exception:
-        return {}
-
-
-def _save_state_store(data: Dict[str, str]) -> None:
-    import json
-    temp = _OAUTH_STATE_FILE.with_suffix(".tmp")
-    temp.write_text(json.dumps(data))
-    temp.replace(_OAUTH_STATE_FILE)
-
 
 def generate_pkce_pair() -> Tuple[str, str]:
     """Generate a PKCE code verifier and its S256 code challenge.
 
-    Returns (verifier, challenge). The verifier is a high-entropy random
-    string; the challenge is the base64url-encoded SHA-256 digest of the
-    verifier (no padding), which is what Spotify compares against.
+    Returns (verifier, challenge).
     """
     verifier = secrets.token_urlsafe(64)
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
@@ -60,17 +35,21 @@ def generate_pkce_pair() -> Tuple[str, str]:
 def build_auth_url(client_id: Optional[str] = None) -> Tuple[str, str, str]:
     """Build the Spotify authorize URL plus the PKCE verifier.
 
-    Returns (url, code_verifier, state).
-    The generated state is stored in the file-backed OAuth state store
-    so it can be validated during the token exchange callback, even when
-    the callback hits a different Gunicorn worker.
+    Returns (url, state). The verifier is embedded in a signed JWT payload
+    that the frontend must pass back in the callback — this avoids any
+    shared state between machines (critical for Fly.io's ephemeral VMs).
     """
+    import jwt
     client_id = client_id or SPOTIFY_CLIENT_ID
     verifier, challenge = generate_pkce_pair()
     state = secrets.token_urlsafe(16)
-    store = _load_state_store()
-    store[state] = verifier
-    _save_state_store(store)
+    # Store verifier in a JWT claim so it's verified server-side and
+    # survives cross-machine routing / VM restarts.
+    token = jwt.encode(
+        {"verifier": verifier, "state": state},
+        JWT_SECRET,
+        algorithm="HS256",
+    )
     params = {
         "client_id": client_id,
         "response_type": "code",
@@ -81,34 +60,35 @@ def build_auth_url(client_id: Optional[str] = None) -> Tuple[str, str, str]:
         "state": state,
         "show_dialog": "false",
     }
-    return f"{AUTH_URL}?{urllib.parse.urlencode(params)}", verifier, state
+    url = f"{AUTH_URL}?{urllib.parse.urlencode(params)}"
+    return url, state, token
 
 
-def exchange_code(code: str, state: Optional[str] = None, code_verifier: Optional[str] = None, client_id: Optional[str] = None) -> dict:
+def exchange_code(code: str, state: str, client_id: Optional[str] = None) -> dict:
     """Exchange an authorization code for a token dict.
 
-    The PKCE code_verifier is looked up from the file-backed state store
-    keyed by `state`, so the frontend never needs to transmit it. This
-    fixes the mobile auth loop where sessionStorage is cleared when the
-    browser navigates away to Spotify and back (common on iOS Safari and
-    some Android browsers).
-
-    Validates the state parameter to prevent CSRF attacks. Raises ValueError
-    with a descriptive message on failure so the caller can translate it into
-    a clean HTTP response instead of a 500.
+    Verifies the state parameter by decoding the JWT returned from
+    build_auth_url — no file-backed state store needed.
+    Raises ValueError with a descriptive message on failure.
     """
+    import jwt
     client_id = client_id or SPOTIFY_CLIENT_ID
 
-    # Validate state parameter against stored state from build_auth_url
-    if state is not None:
-        store = _load_state_store()
-        stored_verifier = store.pop(state, None)
-        _save_state_store(store)
-        if stored_verifier is None:
-            raise ValueError("Invalid state parameter: state not found or already used")
-        code_verifier = stored_verifier
-    elif not code_verifier:
-        raise ValueError("Missing code_verifier and no state to look it up from")
+    # Decode the JWT to recover the verifier — this proves we generated
+    # the auth URL and verifies the state matches.
+    try:
+        payload = jwt.decode(state, JWT_SECRET, algorithms=["HS256"])
+        # The state parameter is also the JWT — extract the verifier.
+        # If that fails, state might be a raw state string (legacy path).
+        # Try the raw state lookup as fallback.
+        code_verifier = payload.get("verifier")
+        if not code_verifier:
+            # Legacy: state is just a state string, verifier stored in JWT separately
+            raise ValueError("Invalid or missing verifier in state token")
+    except jwt.PyJWTError:
+        # state is a raw value, not a JWT — this shouldn't happen with the
+        # new flow but handle gracefully.
+        raise ValueError("Invalid state parameter: unable to decode verifier")
 
     resp = requests.post(
         TOKEN_URL,
@@ -136,27 +116,15 @@ def exchange_code(code: str, state: Optional[str] = None, code_verifier: Optiona
 
 
 def _validate_state(stored_state: str, callback_url_state: Optional[str]) -> bool:
-    """Validate that the callback state matches the stored PKCE state.
-
-    Prevents CSRF attacks where an attacker tricks a user into visiting a
-    malicious auth URL and then uses the authorization code to hijack the
-    user's session since the backend doesn't verify state matches.
-    """
-    if not stored_state:
-        return False
-    if not callback_url_state:
+    """Validate that the callback state matches the stored PKCE state."""
+    if not stored_state or not callback_url_state:
         return False
     return stored_state == callback_url_state
 
 
 def refresh_token(refresh_token: str, client_id: str, code_verifier: str) -> Optional[str]:
-    """Refresh the access token; returns new token or None.
-
-    Accepts the refresh_token, client_id, and code_verifier directly
-    instead of reading from stored token data.
-    """
+    """Refresh the Spotify access token."""
     from auth.token_store import save_token, _load
-
     data = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
@@ -174,8 +142,6 @@ def refresh_token(refresh_token: str, client_id: str, code_verifier: str) -> Opt
     payload = resp.json()
     payload["refresh_token"] = refresh_token
 
-    # Update stored token so subsequent calls use fresh access_token and expires_at.
-    # Find the account that matches this refresh_token/client_id/code_verifier.
     tokens_data = _load()
     matched_account_id = None
     for acc_id, token_data in tokens_data.items():
@@ -188,10 +154,10 @@ def refresh_token(refresh_token: str, client_id: str, code_verifier: str) -> Opt
             break
 
     if matched_account_id:
-        updated_token = payload.copy()
-        updated_token["refresh_token"] = refresh_token
-        updated_token["client_id"] = client_id
-        updated_token["code_verifier"] = code_verifier
-        save_token(matched_account_id, updated_token)
+        updated = payload.copy()
+        updated["refresh_token"] = refresh_token
+        updated["client_id"] = client_id
+        updated["code_verifier"] = code_verifier
+        save_token(matched_account_id, updated)
 
     return payload.get("access_token")

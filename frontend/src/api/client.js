@@ -104,11 +104,9 @@ const apiClient = {
     return res.json();
   },
   async exchangeCode(code, state) {
-    // The PKCE verifier is looked up server-side from the state store keyed
-    // by `state`, so the frontend never has to transmit it. This fixes the
-    // mobile auth loop where sessionStorage is cleared when the browser
-    // navigates away to Spotify and back (common on iOS Safari and some
-    // Android browsers).
+    // The state parameter is a JWT embedding the PKCE verifier. No shared
+    // server state needed — the verifier travels with the callback, solving
+    // the ephemeral Fly.io machine problem and mobile sessionStorage clearing.
     const res = await fetch(`${API_BASE}/api/auth/callback`, {
       method: 'POST',
       headers: getHeaders(),

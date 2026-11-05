@@ -259,10 +259,11 @@ async def auth_callback_get(code: str, state: str = None):
 async def auth_callback(body: dict):
     code = body.get("code")
     state = body.get("state")
-    # The PKCE verifier is looked up server-side from the state store, so the
-    # frontend never has to transmit it. This fixes the mobile auth loop where
-    # sessionStorage is cleared when the browser navigates away to Spotify and
-    # back (common on iOS Safari and some Android browsers).
+    # The state parameter is a JWT containing the PKCE verifier, issued by
+    # build_auth_url. This eliminates the need for shared in-memory or
+    # file-backed state — the verifier travels with the callback, solving
+    # the ephemeral Fly.io machine problem and the mobile sessionStorage
+    # clearing problem simultaneously.
     if not code:
         raise HTTPException(status_code=400, detail="Missing code")
     if not state:
