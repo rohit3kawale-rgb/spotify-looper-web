@@ -23,15 +23,17 @@ export function connectSocket() {
   if (!token) return;
   disconnectSocket();
 
+  let conn;
   try {
-    ws = new WebSocket(`${wsBase()}/ws?token=${token}`);
+    conn = new WebSocket(`${wsBase()}/ws?token=${token}`);
   } catch {
     return;
   }
 
-  ws.onopen = () => notify(true);
-
-  ws.onmessage = (event) => {
+  conn.onopen = () => { ws = conn; notify(true); };
+  conn.onclose = () => { ws = null; notify(false); reconnectTimer = setTimeout(connectSocket, 3000); };
+  conn.onerror = () => { try { conn.close(); } catch {} };
+  conn.onmessage = (event) => {
     let msg;
     try { msg = JSON.parse(event.data); } catch { return; }
     const s = useStore.getState();
@@ -40,14 +42,6 @@ export function connectSocket() {
     else if (msg.type === 'devices') s.setDevices(msg.data);
     else if (msg.type === 'error') s.setError(msg.data.error);
   };
-
-  ws.onclose = () => {
-    notify(false);
-    ws = null;
-    reconnectTimer = setTimeout(connectSocket, 3000);
-  };
-
-  ws.onerror = () => { try { ws.close(); } catch {} };
 }
 
 export function disconnectSocket() {

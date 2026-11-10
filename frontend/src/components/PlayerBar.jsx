@@ -1,7 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
 import apiClient from '../api/client';
-import { sendControl } from '../api/socket';
 import useStore from '../store';
 
 export default function PlayerBar() {
@@ -16,11 +14,9 @@ export default function PlayerBar() {
     formatTime,
   } = useStore();
 
-  const [localSeek, setLocalSeek] = useState(null); // ms while dragging
+  const [localSeek, setLocalSeek] = useState(null);
   const [hoverMs, setHoverMs] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
-  // Time-based progress: anchor = store progress at last sync; we extrapolate
-  // from that with the wall clock instead of a per-frame counter.
   const anchorRef = useRef({ at: Date.now(), progressMs: 0 });
   const [renderTick, setRenderTick] = useState(0);
 
@@ -28,14 +24,12 @@ export default function PlayerBar() {
   const isPlaying = !!playback?.is_playing;
   const duration = item?.duration_ms || item?.durationMs || 0;
 
-  // Reset the extrapolation anchor whenever the server sends new progress.
   useEffect(() => {
     if (playback?.progress_ms != null) {
       anchorRef.current = { at: Date.now(), progressMs: playback.progress_ms };
     }
   }, [playback?.progress_ms]);
 
-  // While playing, tick the clock to keep the bar moving between WS updates.
   useEffect(() => {
     if (!isPlaying || isDragging) return;
     let raf;
@@ -61,7 +55,6 @@ export default function PlayerBar() {
   const artistNames = Array.isArray(item?.artists)
     ? item.artists.map(a => (typeof a === 'string' ? a : a?.name)).filter(Boolean).join(', ')
     : '';
-  // Defensive: album art path can vary; never let a missing field throw.
   const albumArtUrl = item?.albumArtUrl || item?.album?.images?.[0]?.url || '';
 
   const sliderRef = useRef(null);
@@ -74,7 +67,7 @@ export default function PlayerBar() {
   }, [duration]);
 
   const commitSeek = useCallback((ms) => {
-    anchorRef.current = { at: Date.now(), progressMs: ms }; // optimistic
+    anchorRef.current = { at: Date.now(), progressMs: ms };
     apiClient.control('seek', { position_ms: ms });
   }, []);
 
@@ -101,7 +94,6 @@ export default function PlayerBar() {
     };
   }, [isDragging, posToMs, commitSeek]);
 
-  // Touch support for mobile seeking
   const handleTouch = useCallback((e) => {
     const t = e.touches?.[0];
     if (!t) return;
@@ -113,7 +105,6 @@ export default function PlayerBar() {
 
   const handlePlayPause = useCallback(() => {
     const action = isPlaying ? 'pause' : 'play';
-    // Optimistic UI flip
     useStore.getState().setPlayback({ ...playback, is_playing: !isPlaying });
     if (!sendControl(action)) {
       apiClient.control(action).catch((err) =>
@@ -144,25 +135,22 @@ export default function PlayerBar() {
   const hasTrack = !!item;
 
   return (
-    <motion.div
-      initial={{ y: 90 }}
-      animate={{ y: 0 }}
-      className="fixed bottom-0 left-0 right-0 z-50 bg-spotify-black/95 backdrop-blur-sm border-t border-white/5"
-      style={{ height: '90px' }}
+    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/5 fade-in-up"
+      style={{ height: '90px', background: '#121212' }}
     >
-      <div className="h-full flex items-center gap-4 px-4">
+      <div className="h-full flex items-center gap-3 px-4 max-w-7xl mx-auto">
         {/* Left: track info */}
-        <div className="flex items-center gap-3 w-[30%] min-w-[180px]">
+        <div className="flex items-center gap-3 w-[26%] min-w-[160px]">
           {albumArtUrl ? (
             <img
               src={albumArtUrl}
               alt=""
-              className="w-14 h-14 rounded-md object-cover shadow-lg flex-shrink-0"
+              className="w-12 h-12 rounded object-cover flex-shrink-0"
               onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
             />
           ) : (
-            <div className="w-14 h-14 bg-spotify-light-gray rounded-md flex items-center justify-center flex-shrink-0">
-              <svg className="w-6 h-6 text-spotify-gray" viewBox="0 0 24 24" fill="currentColor">
+            <div className="w-12 h-12 bg-spotify-light-gray rounded flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-white/60" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
               </svg>
             </div>
@@ -178,7 +166,7 @@ export default function PlayerBar() {
         </div>
 
         {/* Center: controls + progress */}
-        <div className="flex-1 flex flex-col items-center gap-1.5 max-w-2xl mx-auto">
+        <div className="flex-1 flex flex-col items-center gap-2 max-w-2xl mx-auto">
           <div className="flex items-center gap-4">
             <button
               onClick={() => handleSkip('previous')}
@@ -187,15 +175,13 @@ export default function PlayerBar() {
               aria-label="Previous"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                <path d="M6 6h2v12H6zm3.5 0L18 18V6z" />
               </svg>
             </button>
 
-            <motion.button
+            <button
               onClick={handlePlayPause}
-              whileHover={{ scale: 1.06 }}
-              whileTap={{ scale: 0.94 }}
-              className="w-9 h-9 bg-white rounded-full flex items-center justify-center text-black hover:scale-105 transition disabled:opacity-40"
+              className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-black shadow-sm hover:scale-105 transition disabled:opacity-40"
               aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
@@ -205,7 +191,7 @@ export default function PlayerBar() {
                   <path d="M8 5v14l11-7z" />
                 )}
               </svg>
-            </motion.button>
+            </button>
 
             <button
               onClick={() => handleSkip('next')}
@@ -220,12 +206,12 @@ export default function PlayerBar() {
           </div>
 
           <div className="w-full flex items-center gap-2">
-            <span className="text-[11px] text-spotify-gray font-mono w-10 text-right tabular-nums">
+            <span className="text-[10px] text-spotify-gray font-mono w-8 text-right tabular-nums">
               {formatTime(Math.floor(progress))}
             </span>
             <div
               ref={sliderRef}
-              className="group relative flex-1 h-1 rounded-full bg-white/20 cursor-pointer touch-none"
+              className="group relative flex-1 h-2 rounded-full bg-white/10 cursor-pointer touch-none"
               onMouseDown={handleMouseDown}
               onMouseMove={(e) => !isDragging && setHoverMs(posToMs(e.clientX))}
               onMouseLeave={() => setHoverMs(null)}
@@ -233,54 +219,36 @@ export default function PlayerBar() {
               onTouchMove={handleTouch}
               onTouchEnd={handleTouch}
             >
-              {/* hover preview fill */}
               {hoverPercent != null && !isDragging && (
                 <div
-                  className="absolute inset-y-0 left-0 bg-white/30 rounded-full"
+                  className="absolute inset-y-0 left-0 bg-white/20 rounded-full"
                   style={{ width: `${hoverPercent}%` }}
                 />
               )}
-              {/* progress fill */}
               <div
-                className="absolute inset-y-0 left-0 bg-white group-hover:bg-spotify-green rounded-full"
+                className="absolute inset-y-0 left-0 bg-spotify-green rounded-full"
                 style={{ width: `${progressPercent}%` }}
               />
-              {/* thumb */}
               <div
                 className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow transition-opacity ${
-                  isDragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  isDragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
                 }`}
                 style={{ left: `${progressPercent}%` }}
               />
             </div>
-            <span className="text-[11px] text-spotify-gray font-mono w-10 tabular-nums">
+            <span className="text-[10px] text-spotify-gray font-mono w-8 tabular-nums">
               {formatTime(duration)}
             </span>
           </div>
         </div>
 
         {/* Right: volume + device */}
-        <div className="flex items-center gap-3 w-[30%] min-w-[180px] justify-end">
-          <div className="hidden md:flex items-center gap-2">
-            <svg className="w-4 h-4 text-spotify-gray hover:text-white cursor-pointer" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
-            </svg>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={volume}
-              onChange={(e) => handleVolumeChange(Number(e.target.value))}
-              className="w-24 h-1 accent-spotify-green cursor-pointer"
-              aria-label="Volume"
-            />
-          </div>
-
+        <div className="flex items-center gap-3 w-[26%] min-w-[160px] justify-end">
           {devices?.length > 0 && (
             <select
               value={currentDeviceId || ''}
               onChange={(e) => handleDeviceChange(e.target.value)}
-              className="bg-spotify-dark-gray text-spotify-gray hover:text-white text-xs rounded-full px-3 py-1.5 border border-transparent hover:border-white/20 focus:outline-none max-w-[130px] truncate cursor-pointer transition"
+              className="bg-spotify-dark-gray text-spotify-gray hover:text-white text-xs rounded-full px-3 py-1.5 border border-white/10 hover:border-white/20 focus:outline-none max-w-[130px] truncate cursor-pointer transition"
               aria-label="Playback device"
             >
               <option value="">Device…</option>
@@ -291,8 +259,23 @@ export default function PlayerBar() {
               ))}
             </select>
           )}
+
+          <div className="flex items-center gap-2">
+            <svg className="w-3.5 h-3.5 text-white/60 hover:text-white cursor-pointer" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
+            </svg>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={volume}
+              onChange={(e) => handleVolumeChange(Number(e.target.value))}
+              className="w-20 h-1 accent-spotify-green cursor-pointer"
+              aria-label="Volume"
+            />
+          </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
