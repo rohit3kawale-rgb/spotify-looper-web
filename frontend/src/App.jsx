@@ -1,13 +1,14 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import apiClient from './api/client';
 import useStore from './store';
 import AuthScreen from './components/auth/AuthScreen';
 import MainLayout from './components/MainLayout';
+import ErrorBoundary from './components/ErrorBoundary';
 
 function App() {
-  const { isAuthenticated, sessionToken, setSession, clearSession, setAuthData, setProfile } = useStore();
+  const { isAuthenticated, sessionToken, setSession, clearSession, setAuthData, setProfile, restorePendingVerifier } = useStore();
 
   // Initialize auth URL on load - only once to prevent duplicate calls
   useEffect(() => {
@@ -31,12 +32,12 @@ function App() {
     }
   }, [setAuthData]);
 
-  // Restore session from localStorage - only when no valid session exists
+  // Restore session from localStorage on app start
   useEffect(() => {
     const savedToken = localStorage.getItem('spotify_looper_session');
     if (savedToken && !isAuthenticated) {
+      // Verify the session with the backend
       apiClient.setSession(savedToken);
-      // Verify session by fetching auth status
       (async () => {
         try {
           const status = await apiClient.checkAuthStatus();
@@ -45,7 +46,9 @@ function App() {
             setProfile(status.user);
             setSession(savedToken, status.user);
           } else {
-            throw new Error('Not authenticated');
+            // Not authenticated — clear the stale token
+            localStorage.removeItem('spotify_looper_session');
+            apiClient.clearSession();
           }
         } catch {
           localStorage.removeItem('spotify_looper_session');
@@ -68,7 +71,8 @@ function App() {
   }, [clearSession]);
 
   return (
-    <div className="min-h-screen bg-spotify-black">
+    <ErrorBoundary>
+      <div className="min-h-screen bg-spotify-black">
       <AnimatePresence mode="wait">
         {isAuthenticated ? (
           <motion.div
@@ -90,12 +94,17 @@ function App() {
           >
             <Routes>
               <Route path="/auth/callback" element={<AuthScreen />} />
+              <Route path="/" element={<AuthScreen />} />
+              <Route path="/presets" element={<AuthScreen />} />
+              <Route path="/devices" element={<AuthScreen />} />
+              <Route path="/room/:id" element={<AuthScreen />} />
               <Route path="*" element={<AuthScreen />} />
             </Routes>
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
 
